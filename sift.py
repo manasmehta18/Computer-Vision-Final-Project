@@ -1,9 +1,10 @@
 #! /usr/bin/env python3
 import cv2 as cv
 import matplotlib.pyplot as plt
-#%matplotlib inline
+import os
+import numpy as np
 
-def sift(lighthouse, detect_lighthouse, blur = False):
+def sift(lighthouse, detect_lighthouse, counter, blur = False, mask=False):
     model_img = cv.imread(lighthouse)
     model_gray = cv.cvtColor(model_img, cv.COLOR_BGR2GRAY)
 
@@ -13,7 +14,20 @@ def sift(lighthouse, detect_lighthouse, blur = False):
 
     # keypoints
     sift = cv.SIFT_create()
-    keypoints = sift.detect(model_gray, None)
+
+    # Create Masks
+    model_mask = np.ones(model_gray.shape)
+    if mask:
+        model_mask[:, :int(model_mask.shape[1]* 2/10)] = 0
+        model_mask[:, int(model_mask.shape[1]* 7/10):] = 0
+        model_mask[:int(model_mask.shape[0]* 1/20), :] = 0
+        model_mask[int(model_mask.shape[0]* 17/20):, :] = 0
+    model_mask = model_mask.astype(np.uint8)
+    if mask:
+        masked_img = cv.bitwise_and(model_gray, model_gray, mask=model_mask)
+        cv.imwrite('Masked Lighthouse.jpg', masked_img)
+
+    keypoints = sift.detect(model_gray, mask=model_mask)
 
     model_img_kp = cv.drawKeypoints(model_gray, keypoints, None)
     #model_img_kp = cv.drawKeypoints(model_gray, keypoints, model_img, flags=cv.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
@@ -27,7 +41,7 @@ def sift(lighthouse, detect_lighthouse, blur = False):
     cv.imshow('OpenCV Display Window', model_img_kp)
 
     # keypoints and descriptors
-    kp, des = sift.detectAndCompute(model_gray, None)
+    kp, des = sift.detectAndCompute(model_gray, mask=model_mask)
 
     # Read in image to compare
     detect_img = cv.imread(detect_lighthouse)
@@ -50,10 +64,35 @@ def sift(lighthouse, detect_lighthouse, blur = False):
     matches = sorted(matches, key = lambda x:x.distance)
     print(len(matches))
 
-    match_img = cv.drawMatches(model_gray, kp, detect_gray, kp2, matches[:20], None, flags=cv.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
-    cv.imwrite('Matches.jpg', match_img)
+    match_img = cv.drawMatches(model_gray, kp, detect_gray, kp2, matches[:100], None, flags=cv.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+    cv.imwrite('Matches{}.jpg'.format(counter), match_img)
     #plt.imshow(match_img),plt.show()
 
 if __name__ == "__main__":
-    #sift('pigeonpointlighthouse.jpg', 'PigeonPoint/Pigeon-Point-Vertical.jpg', True)
-    sift('pigeonpointlighthouse.jpg', 'Random/CapePalliserNZ.jpg', True)
+    #sift('pigeonpointlighthouse.jpg', 'Random/1.jpg', False)
+    #sift('pigeonpointlighthouse.jpg', 'Random/2.jpg', False)
+    #sift('pigeonpointlighthouse.jpg', 'Random/3.jpeg', False)
+    #sift('pigeonpointlighthouse.jpg', 'Random/4.jpeg', False)
+    #sift('pigeonpointlighthouse.jpg', 'Random/5.jpg', False)
+    #sift('pigeonpointlighthouse.jpg', 'PigeonPoint/1.jpg', False)
+    #sift('pigeonpointlighthouse.jpg', 'PigeonPoint/2.jpeg', False)
+    #sift('pigeonpointlighthouse.jpg', 'PigeonPoint/3.jpg', False)
+    #sift('pigeonpointlighthouse.jpg', 'PigeonPoint/4.gif', False) # Can't use .gif format
+    #sift('pigeonpointlighthouse.jpg', 'PigeonPoint/5.jpg', False)
+    #sift('pigeonpointlighthouse.jpg', 'PigeonPoint/6.jpg', False)
+    #sift('pigeonpointlighthouse.jpg', 'PigeonPoint/7.jpg', False)
+    #sift('pigeonpointlighthouse.jpg', 'PigeonPoint/8.jpg', False)
+    #sift('pigeonpointlighthouse.jpg', 'PigeonPoint/9.jpg', False)
+    counter = 1
+    random_images = os.listdir('Random')
+    random_images.sort()
+    print(random_images)
+    for image in random_images:
+        sift('pigeonpointlighthouse.jpg', 'Random/{}'.format(image), counter, False, True)
+        counter += 1
+    pigeonpoint_images = os.listdir('PigeonPoint')
+    pigeonpoint_images.sort()
+    print(pigeonpoint_images)
+    for image in pigeonpoint_images:
+        sift('pigeonpointlighthouse.jpg', 'PigeonPoint/{}'.format(image), counter, False, True)
+        counter += 1
