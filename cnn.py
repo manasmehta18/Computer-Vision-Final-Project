@@ -11,13 +11,18 @@ from sklearn.model_selection import StratifiedKFold
 from keras.callbacks import EarlyStopping
 import shutil
 import sklearn as sk
+import csv
 
 import svm
 import scaling
 import augment
+import config as cfg
 
 import argparse
 import tensorflow as tf
+
+import time
+
 config = tf.compat.v1.ConfigProto(gpu_options=tf.compat.v1.GPUOptions(
     per_process_gpu_memory_fraction=0.8)
 )
@@ -40,8 +45,8 @@ if options.process:
     shutil.rmtree("./" + other_image_dir)
     os.mkdir(lighthouse_image_dir)
     os.mkdir(other_image_dir)
-    scaling.scale("lighthouses", lighthouse_image_dir, (128, 128))
-    scaling.scale("365", other_image_dir, (128, 128))
+    scaling.scale("lighthouses", lighthouse_image_dir, (cfg.size[0], cfg.size[1]))
+    scaling.scale("365", other_image_dir, (cfg.size[0], cfg.size[1]))
 
 
 # Read images in as grayscale images and store as numpy arrays
@@ -49,13 +54,13 @@ if options.process:
 images = []
 y = []
 for file in os.listdir(lighthouse_image_dir):
-    image = cv.imread(lighthouse_image_dir + "/" + file, 0)
+    image = cv.imread(lighthouse_image_dir + "/" + file, 1 if cfg.rgb else 0)
     images.append(image)
     
     y.append(1)
 
 for file in os.listdir(other_image_dir):
-    image = cv.imread(other_image_dir + "/" + file, cv.IMREAD_GRAYSCALE)
+    image = cv.imread(other_image_dir + "/" + file, 1 if cfg.rgb else 0)
     images.append(image)
     y.append(0)
 
@@ -68,8 +73,10 @@ loss_per_fold = []
 
 results = []
 
-for epochs in range(15, 16):
+for epochs in range(cfg.epochs, cfg.epochs + 1):
     for train_index, test_index in kf.split(images, y):
+        start = time.time()
+
         images = np.array(images)
         y = np.array(y)
 
@@ -83,15 +90,31 @@ for epochs in range(15, 16):
                 augment_img = np.copy(img)
                 augment_imgs = augment.augment(augment_img, options)
 
+                if not os.path.exists('augment_out'):
+                    os.makedirs('augment_out')
+
+                if cfg.aug_imgs:  
+                    from random import random
+                    rand_str = str(random()).replace(".", "")
+                    os.makedirs('augment_out/' + rand_str)
+                    cv.imwrite('augment_out/' + rand_str + '/before.jpg', img) 
+                    cv.imwrite('augment_out/' + rand_str + '/after.jpg', augment_imgs[0]) 
+                    
+
                 if options.pa:
                     X_train[i] = cv.Canny(X_train[i] ,100,200)
-                    # cv.imshow('image', augment_imgs[0])
-                    # cv.waitKey(0)
+
+
+                # cv.imshow('image', augment_imgs[0])
+                # cv.waitKey(0)
+                # print(augment_imgs[0].shape)
+                # print(X_train[i].shape)
 
                 
                 aug_X_train = aug_X_train + augment_imgs
                 aug_y_train = aug_y_train + [ y_train[i] for _ in range(len(augment_imgs))] 
-
+            if cfg.aug_imgs: 
+                exit(0)
                 
             X_train = np.concatenate((X_train, np.array(aug_X_train)))
             y_train = np.concatenate((y_train, np.array(aug_y_train)))
@@ -106,27 +129,18 @@ for epochs in range(15, 16):
         X_test = (X_test / 255.0) - 0.5
 
         # Reshape the images.
-        X_train = np.expand_dims(X_train, axis=3)
-        X_test = np.expand_dims(X_test, axis=3)
+        if not cfg.rgb:
+            X_train = np.expand_dims(X_train, axis=3)
+            X_test = np.expand_dims(X_test, axis=3)
 
-        #num_filters = 3
-        filter_size = 3
-        pool_size = 2
+        end = time.time()
+        time_to_augment = str(end-start)
+        start = time.time()
 
+        #num_filters = 3      
         # Build the model.
-        model = Sequential([
-            Conv2D(20, filter_size, activation='relu', input_shape=(128, 128, 1)),
-            MaxPooling2D(pool_size=4),
-            # Conv2D(60, filter_size, activation='relu'),
-            # MaxPooling2D(pool_size=2),
-            # Conv2D(60, filter_size, activation='relu'),
-            # MaxPooling2D(pool_size=2),
-            # Conv2D(60, filter_size, activation='relu'),
-            # MaxPooling2D(pool_size=pool_size),
-            Flatten(),
-            Dense(128, activation='relu'),
-            Dense(2, activation='softmax'),
-        ])
+
+        model = cfg.layer()
 
         # Compile the model.
         model.compile(
@@ -153,6 +167,9 @@ for epochs in range(15, 16):
     #    print(f'Test loss: {score[0]} / Test accuracy: {score[1]}')
         # Generate generalization metrics
         scores = model.evaluate(X_test, to_categorical(y_test), verbose=0)
+
+        end = time.time()
+        time_to_train = str(end-start)
         
         print(
             f'Score for fold {index}: {model.metrics_names[0]} of {scores[0]}; {model.metrics_names[1]} of {scores[1]*100}%')
@@ -166,10 +183,33 @@ for epochs in range(15, 16):
         predicted_prob = predicted_prob.T[1].T
         target_true = y_test
 
+
+
         print(target_predicted)
         print(target_true)
 
-        # Takes 2 lists of length n
+        if cfg.do_images:
+            for i, prob in enumerate(target_predicted):
+                
+                X_test[i] = 255 * (X_test[i] - X_test[i].min()) / (X_test[i].max() - X_test[i].min())
+                X_test[i] = np.array(X_test[i], np.int)
+
+                if target_predicted[i] == target_true[i]:
+                    print("Hit! Lighthouse:", target_true[i], ", predicted_prob: ", predicted_prob[i])
+                    if target_true[i] == 1:
+                        cv.imwrite("data/TP/" + str(predicted_prob[i])+ ".jpg", X_test[i])
+                    else:
+                        cv.imwrite("data/TN/" + str(predicted_prob[i])+ ".jpg", X_test[i])
+                else:
+                    print("Miss! Lighthouse actually:", target_true[i], ", predicted_prob: ", predicted_prob[i])
+                    if target_true[i] == 1:
+                        cv.imwrite("data/FN/" + str(predicted_prob[i]) + ".jpg", X_test[i])
+                    else:
+                        cv.imwrite("data/FP/" + str(predicted_prob[i])+ ".jpg", X_test[i])
+                
+            cv.imshow('image', X_test[0])
+            cv.waitKey(0)
+        # # Takes 2 lists of length n
 
         #Precision
         precision = sk.metrics.precision_score(target_true, target_predicted,  average = 'binary')
@@ -188,19 +228,22 @@ for epochs in range(15, 16):
         r["precision"] = precision
         r["recall"] = recall
         r["roc"] = roc_auc
-        r["conf"] = confusion_mtx
+        r["confusion_matrix"] = str(confusion_mtx).replace("\n", ",")
         r["f_score"] = f_score
+        r["time to augment (seconds)"] = time_to_augment
+        r["time_to_train (seconds)"] = time_to_train
+        r["loss_per_fold"] = scores[0]
+        r["acc_per_fold"] = scores[1] * 100
+    
         results.append(r)
     
-
-
     # Split training/testing data
     # X_train, X_test, y_train, y_test = train_test_split(images,
     #                                                    y,
     #                                                    test_size=0.2,
     #                                                    stratify=y)
-
     # == Provide average scores ==
+
     print('------------------------------------------------------------------------')
     print('Score per fold')
     for i in range(0, len(acc_per_fold)):
@@ -216,6 +259,13 @@ for epochs in range(15, 16):
     print(f'> Loss: {np.mean(loss_per_fold)}')
     print('------------------------------------------------------------------------')
 
+    keys = results[0].keys()
+    with open('results.csv', 'w', newline='')  as output_file:
+        dict_writer = csv.DictWriter(output_file, keys)
+        dict_writer.writeheader()
+        dict_writer.writerows(results)
+        
+
     # reset for next loop
     kf = StratifiedKFold(n_splits=10, shuffle=True)
     index = 1
@@ -223,10 +273,7 @@ for epochs in range(15, 16):
     loss_per_fold = []
     results = []
 
-
-
 n = 10
-
 
 # Save the model to disk.
 # model.save_weights('cnn.h5')

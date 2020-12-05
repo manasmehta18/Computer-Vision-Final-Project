@@ -3,9 +3,14 @@ import cv2
 import numpy as np
 import os
 
+import config as cfg
+
 
 def crop_and_resize(img, w, h):
-    im_h, im_w, channels = img.shape
+    if cfg.rgb:
+        im_h, im_w, channels = img.shape
+    else:
+        im_h, im_w = img.shape
     res_aspect_ratio = w/h
     input_aspect_ratio = im_w/im_h
 
@@ -15,14 +20,20 @@ def crop_and_resize(img, w, h):
         img = cv2.resize(img, (im_w_r, im_h_r))
         x1 = int((im_w_r - w)/2)
         x2 = x1 + w
-        img = img[:, x1:x2, :]
+        if cfg.rgb:
+            img = img[:, x1:x2, :]
+        else:
+            img = img[:, x1:x2]
     if input_aspect_ratio < res_aspect_ratio:
         im_w_r = w
         im_h_r = int(w/input_aspect_ratio)
         img = cv2.resize(img, (im_w_r, im_h_r))
         y1 = int((im_h_r - h)/2)
         y2 = y1 + h
-        img = img[y1:y2, :, :]
+        if cfg.rgb:
+            img = img[y1:y2, :, :]
+        else:
+            img = img[y1:y2, :]
     if input_aspect_ratio == res_aspect_ratio:
         img = cv2.resize(img, (w, h))
 
