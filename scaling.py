@@ -6,7 +6,7 @@ import config as cfg
 
 
 def crop_and_resize(img, w, h):
-    if cfg.rgb:
+    if cfg.rgb and not cfg.canny:
         im_h, im_w, c = img.shape
     else: 
         im_h, im_w = img.shape
@@ -20,7 +20,7 @@ def crop_and_resize(img, w, h):
         img = cv.resize(img, (im_w_r, im_h_r))
         x1 = int((im_w_r - w)/2)
         x2 = x1 + w
-        if cfg.rgb:
+        if cfg.rgb and not cfg.canny:
             img = img[:, x1:x2, :]
         else:
             img = img[:, x1:x2]
@@ -30,7 +30,7 @@ def crop_and_resize(img, w, h):
         img = cv.resize(img, (im_w_r, im_h_r))
         y1 = int((im_h_r - h)/2)
         y2 = y1 + h
-        if cfg.rgb:
+        if cfg.rgb and not cfg.canny:
             img = img[y1:y2, :, :]
         else:
             img = img[y1:y2, :]
@@ -50,12 +50,8 @@ def scale(src_dir, res_dir, size):
         if img is None:
             sys.exit('Could not read the image: ' + file)
 
-        # # over here
-        # img = cv.GaussianBlur(img,(5,5),0)
-
         if cfg.canny:
             img = cv.Canny(img,100,200)
-
 
         new_file = crop_and_resize(img, cfg.size[0], cfg.size[1])
         cv.imwrite(os.path.join(res_dir, str(counter)+'.jpg'), new_file)
